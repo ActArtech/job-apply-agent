@@ -1,0 +1,44 @@
+# Secrets and personal data — never commit
+.env
+.env.*
+!.env.example
+profile.json
+credentials.json
+token.json
+*.pem
+
+# Generated output and local state
+artifacts/
+generated_resumes/
+*.pdf
+*.csv
+*.log
+.applied.txt
+.vetted_cache.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# LaTeX build artifacts
+*.aux
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+test-results/
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/

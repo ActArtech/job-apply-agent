@@ -1,0 +1,70 @@
+{
+  "contact": {
+    "name": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "phone": "+1-555-0100",
+    "portfolio": "https://example.com",
+    "linkedin": "https://www.linkedin.com/in/example/",
+    "legal_first_name": "Jane",
+    "legal_last_name": "Doe",
+    "preferred_first_name": "Jane",
+    "preferred_last_name": "Doe",
+    "last_name_fallback": "N/A"
+  },
+  "address": {
+    "line1": "1 Example Street",
+    "city": "Example City",
+    "state": "Example State",
+    "postal_code": "000000",
+    "country": "Country"
+  },
+  "work_authorization": {
+    "authorized_in_country": true,
+    "requires_sponsorship": false
+  },
+  "experience": [
+    {
+      "company": "Example Product Company",
+      "role": "Senior Software Engineer",
+      "period": "Jan 2023 – Present",
+      "location": "Remote",
+      "bullets": [
+        "Owned end-to-end delivery of customer-facing web features using React and a Python/FastAPI backend, from design through production rollout.",
+        "Designed REST APIs over PostgreSQL with authentication, authorization and audit logging, improving throughput under concurrent load.",
+        "Built async, event-driven pipelines with Celery, Redis queues and WebSockets, with dashboards that reduced manual intervention."
+      ]
+    },
+    {
+      "company": "Example Startup",
+      "role": "Software Engineer",
+      "period": "Jun 2020 – Dec 2022",
+      "location": "Remote",
+      "bullets": [
+        "Built high-traffic React/Next.js surfaces backed by Node.js services with REST and third-party API integrations.",
+        "Developed backend services and relational data models with optimized queries powering search and recommendation features."
+      ]
+    }
+  ],
+  "skills": {
+    "Languages": ["Python", "JavaScript", "TypeScript", "SQL"],
+    "Frontend": ["React.js", "Next.js (SSR)", "Redux", "HTML5", "CSS3"],
+    "Backend": ["FastAPI", "Node.js", "Django", "REST APIs", "WebSockets", "Celery", "AsyncIO"],
+    "Databases": ["PostgreSQL", "MySQL", "MongoDB", "Redis"],
+    "DevOps": ["Docker", "CI/CD", "nginx", "AWS", "Git", "Pytest"],
+    "Concepts": ["Microservices", "Event-driven Workflows", "System Design", "Distributed Systems"]
+  },
+  "education": {
+    "degree": "B.Tech in Computer Science & Engineering",
+    "university": "Example University",
+    "period": "2016 – 2020",
+    "location": "Example City"
+  },
+  "target_roles": [
+    "engineer", "developer", "software", "backend", "frontend",
+    "full stack", "fullstack", "sde", "python", "react", "node"
+  ],
+  "excluded_keywords": [
+    "data scientist", "ml engineer", "machine learning", "qa",
+    "hardware", "firmware", "robotics", "mechanical"
+  ]
+}
