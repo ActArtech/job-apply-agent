@@ -17,10 +17,10 @@ def _generic_backend_package():
         role="Senior Customer Implementation Engineer",
         match_score=92,
         summary="",
-        headline="Backend Engineer | Python · FastAPI · APIs | @Hughes · ex-IndiaMart",
+        headline="Backend Engineer | Python · FastAPI · APIs | @ActArtech",
         tailored_experience=[
             {
-                "company": "Hughes Network Systems (via Teleperformance)",
+                "company": "ActArtech / Keyteller Portfolio",
                 "role": "Software Development Engineer II",
                 "bullets": [
                     "Built backend APIs with Python and FastAPI for production workflows.",
@@ -42,7 +42,7 @@ def _generic_backend_package():
 
 def _skills_only_ai_package():
     pkg = _generic_backend_package()
-    pkg.headline = "AI Implementation Engineer | LLM · RAG · NLP | @Hughes · ex-IndiaMart"
+    pkg.headline = "AI Implementation Engineer | LLM · RAG · NLP | @ActArtech"
     pkg.tailored_skills = {
         "Languages": ["Python", "SQL"],
         "Backend": ["FastAPI", "REST APIs"],
@@ -53,10 +53,10 @@ def _skills_only_ai_package():
 
 def _weak_ai_bullet_package():
     pkg = _generic_backend_package()
-    pkg.headline = "AI Implementation Engineer | LLM · RAG · NLP | @Hughes · ex-IndiaMart"
+    pkg.headline = "AI Implementation Engineer | LLM · RAG · NLP | @ActArtech"
     pkg.tailored_experience = [
         {
-            "company": "Hughes Network Systems (via Teleperformance)",
+            "company": "ActArtech / Keyteller Portfolio",
             "role": "Software Development Engineer II",
             "bullets": [
                 "Worked on AI/ML implementation.",
@@ -79,7 +79,7 @@ def _retrieval_only_ai_package():
     pkg = _generic_backend_package()
     pkg.tailored_experience = [
         {
-            "company": "Hughes Network Systems (via Teleperformance)",
+            "company": "ActArtech / Keyteller Portfolio",
             "role": "Software Development Engineer II",
             "bullets": [
                 "Integrated customer-facing FastAPI services with AI/ML workflow implementation for enterprise deployment, improving page-load performance 23% across production rollouts.",
@@ -95,7 +95,7 @@ def _retrieval_only_ai_package():
 
 def _provider_payload(ai_specific: bool):
     if ai_specific:
-        headline = "AI Implementation Engineer | LLM · RAG · Python APIs | @Hughes · ex-IndiaMart"
+        headline = "AI Implementation Engineer | LLM · RAG · Python APIs | @ActArtech"
         skills = {
             "Languages": ["Python", "SQL"],
             "Backend": ["FastAPI", "REST APIs", "Django"],
@@ -103,12 +103,12 @@ def _provider_payload(ai_specific: bool):
         }
         hughes = [
             "Integrated Python services with AI/ML workflow plumbing, LLM/RAG retrieval paths, and customer deployment hooks for production rollouts across enterprise environments.",
-            "Built NLP and embedding-ready data ingestion flows over event logs and Redis queues, reducing manual triage 15% for AI-assisted troubleshooting.",
+            "Built NLP and embedding-ready data ingestion flows over event logs and Redis queues for AI-assisted troubleshooting.",
             "Partnered with product and engineering stakeholders to productionize ML pipeline integration surfaces with logs, metrics, and root-cause analysis for reliable releases.",
             "Designed FastAPI services and PostgreSQL-backed connector layers for high-throughput enterprise integrations under concurrent workloads.",
-            "Supported cloud deployment, CI/CD, and observability for implementation-specific backend services, cutting setup time 20%.",
+            "Supported cloud deployment, CI/CD, and observability for implementation-specific backend services.",
         ]
-        indiamart = [
+        keyteller = [
             "Delivered API-driven product features across backend and frontend surfaces for high-traffic marketplace workflows.",
             "Optimized SQL-backed service integrations and data flows for performance and maintainability.",
             "Collaborated with product and business teams to translate requirements into production releases.",
@@ -120,7 +120,7 @@ def _provider_payload(ai_specific: bool):
             "Implemented API orchestration and observability patterns for production-grade troubleshooting workflows across distributed services.",
         ]
     else:
-        headline = "Backend Engineer | Python · FastAPI · APIs | @Hughes · ex-IndiaMart"
+        headline = "Backend Engineer | Python · FastAPI · APIs | @ActArtech"
         skills = {
             "Languages": ["Python", "SQL"],
             "Backend": ["FastAPI", "REST APIs", "Django"],
@@ -133,7 +133,7 @@ def _provider_payload(ai_specific: bool):
             "Supported CI/CD releases and production debugging across distributed services.",
             "Collaborated with product and engineering teams to ship maintainable backend features.",
         ]
-        indiamart = [
+        keyteller = [
             "Delivered API-driven product features across backend and frontend surfaces.",
             "Optimized SQL-backed service integrations and data flows.",
             "Collaborated with product and business teams on production releases.",
@@ -155,11 +155,11 @@ def _provider_payload(ai_specific: bool):
         "tailoredSkills": skills,
         "tailoredExperience": [
             {
-                "company": "Hughes Network Systems (via Teleperformance)",
+                "company": "ActArtech / Keyteller Portfolio",
                 "role": "Software Development Engineer II",
                 "bullets": hughes,
             },
-            {"company": "IndiaMart", "role": "Software Development Engineer", "bullets": indiamart},
+            {"company": "Keyteller", "role": "Software Development Engineer", "bullets": keyteller},
             {
                 "company": "AtherMind IntelliDAM --- Enterprise Database Activity Monitoring Platform (Project)",
                 "role": "Product Project",
@@ -217,7 +217,7 @@ def test_ai_backfill_preserves_indiamart_truthful_product_bullets():
     pkg = _retrieval_only_ai_package()
     pkg.tailored_experience.append(
         {
-            "company": "IndiaMart",
+            "company": "Keyteller",
             "role": "Software Development Engineer",
             "bullets": [
                 "Implemented Python-driven data ingestion and transformation pipelines, supporting AI-ready analytics and ensuring data integrity across critical backend services with measurable efficiency gains for scalable production workloads.",
@@ -232,8 +232,8 @@ def test_ai_backfill_preserves_indiamart_truthful_product_bullets():
     bullets = "\n".join(pkg.resume_bullets_text().splitlines())
 
     assert "AI-ready analytics" not in bullets
-    assert "1.5x faster TTI" in bullets
-    assert "operational efficiency 18%" in bullets
+    assert "improved load performance" in bullets
+    assert "improving operational efficiency" in bullets
 
 
 def test_build_prompt_includes_mandatory_jd_target_themes():
@@ -296,7 +296,11 @@ def test_generate_application_backfills_ai_theme_bullets_when_retry_still_misses
     assert report["ok"]
     assert report["ats_impact_ratio"] == 1.0
     bullets = "\n".join(pkg.resume_bullets_text().splitlines())
-    assert "LLM/RAG-ready retrieval workflows" in bullets
-    assert "NLP and embedding-ready" in bullets
-    assert "1.5x faster TTI" in bullets
+    # Assert on THIS candidate's grounded bullets, not the upstream author's wording.
+    assert "LLM/RAG retrieval workflows" in bullets
+    assert "embedding-based text processing" in bullets
+    assert "natural language pipelines" in bullets
+    assert "improved load performance" in bullets
+    assert "68 of 68" in bullets
+    # The old author-specific claim must never appear.
     assert "AI-ready analytics" not in bullets

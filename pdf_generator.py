@@ -1,4 +1,5 @@
 import os
+import shutil
 import jinja2
 from ai_engine import ApplicationPackage
 from config import MY_NAME, MY_EMAIL, MY_PHONE, MY_PORTFOLIO, RESUME
@@ -100,7 +101,7 @@ def compile_tex_to_pdf(tex_content: str, output_filename: str) -> tuple[str, int
             f.write(tex_content)
         try:
             result = subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "resume.tex"],
+                [_find_pdflatex(), "-interaction=nonstopmode", "-halt-on-error", "resume.tex"],
                 cwd=tmpdir,
                 check=True,
                 stdout=subprocess.PIPE,
@@ -121,6 +122,25 @@ def compile_tex_to_pdf(tex_content: str, output_filename: str) -> tuple[str, int
             raise e
 
 
+def _find_pdflatex() -> str:
+    """Locate the pdflatex executable.
+
+    The Windows per-user MiKTeX install is not on PATH for non-interactive
+    shells, so an absolute fallback path is tried.
+    """
+    found = shutil.which("pdflatex")
+    if found:
+        return found
+    candidates = [
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64\pdflatex.exe"),
+        r"C:\Program Files\MiKTeX\miktex\bin\x64\pdflatex.exe",
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return "pdflatex"
+
+
 def generate_pdf(pkg: ApplicationPackage, output_filename: str) -> tuple[str, int]:
     import subprocess
     import tempfile
@@ -138,7 +158,7 @@ def generate_pdf(pkg: ApplicationPackage, output_filename: str) -> tuple[str, in
         try:
             # Run pdflatex
             result = subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "resume.tex"],
+                [_find_pdflatex(), "-interaction=nonstopmode", "-halt-on-error", "resume.tex"],
                 cwd=tmpdir,
                 check=True,
                 stdout=subprocess.PIPE,

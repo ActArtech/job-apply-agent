@@ -5,11 +5,11 @@ from config import RESUME
 def test_resume_source_uses_dense_current_profile():
     experience = RESUME["experience"]
 
-    assert experience[0]["company"] == "Hughes Network Systems (via Teleperformance)"
+    assert experience[0]["company"] == "ActArtech / Keyteller Portfolio"
     assert len(experience[0]["bullets"]) == 5
-    assert experience[1]["company"] == "IndiaMart"
+    assert experience[1]["company"] == "Keyteller"
     assert len(experience[1]["bullets"]) == 4
-    assert "AtherMind IntelliDAM" in experience[2]["company"]
+    assert "Earlier work" in experience[2]["company"]
     assert len(experience[2]["bullets"]) == 3
 
     all_bullets = " ".join(
@@ -17,17 +17,18 @@ def test_resume_source_uses_dense_current_profile():
         for entry in experience
         for bullet in entry["bullets"]
     )
-    assert "WebSocket" in all_bullets
-    assert "Celery" in all_bullets
-    assert "Redis" in all_bullets
-    assert "nginx" in all_bullets
+    assert "safety gate" in all_bullets
+    assert "68 of 68" in all_bullets
+    assert "five business units" in all_bullets
+    assert "zero downtime" in all_bullets
 
     skills = RESUME["skills"]
     assert "TypeScript" in skills["Languages"]
-    assert "WebSockets" in skills["Backend"]
-    assert "Redis" in skills["Databases"]
-    assert "Pytest" in skills["DevOps"]
-    assert "Jest" in skills["DevOps"]
+    assert "Python" in skills["Languages"]
+    assert "Next.js" in skills["Frontend"]
+    assert "PostgreSQL" in skills["Databases"]
+    assert "Docker" in skills["DevOps"]
+    assert "Agentic Systems" in skills["Concepts"]
 
 
 def test_build_prompt_allows_skill_targeting_but_protects_experience_truth():
@@ -39,9 +40,9 @@ def test_build_prompt_allows_skill_targeting_but_protects_experience_truth():
 
     assert "Skills section may be adjusted" in prompt
     assert "Do not claim production experience" in prompt
-    assert "Hughes Network Systems (via Teleperformance): exactly 5 bullets" in prompt
-    assert "IndiaMart: exactly 4 bullets" in prompt
-    assert "AtherMind IntelliDAM" in prompt
+    assert "ActArtech / Keyteller Portfolio: exactly 5 bullets" in prompt
+    assert "Keyteller: exactly 4 bullets" in prompt
+    assert "Earlier work" in prompt
 
 
 def test_build_prompt_includes_positioning_and_headline_rules():
@@ -52,11 +53,11 @@ def test_build_prompt_includes_positioning_and_headline_rules():
     )
 
     assert "POSITIONING (MANDATORY)" in prompt
-    assert "NEVER describe it as a BPO" in prompt
+    assert "NEVER describe it as an agency, consultancy, or outsourcing firm" in prompt
     assert "Echo every company name EXACTLY" in prompt
     assert "HEADLINE RULES" in prompt
     assert '"headline"' in prompt
-    assert "@Hughes · ex-IndiaMart" in prompt
+    assert "@ActArtech" in prompt
 
 
 def test_build_prompt_requires_ats_coverage_and_impact_density():
@@ -89,21 +90,21 @@ def test_generated_package_keeps_dense_shape_and_sanitizes_experience_claims():
         },
         "tailoredExperience": [
             {
-                "company": "Hughes Network Systems (via Teleperformance)",
+                "company": "ActArtech / Keyteller Portfolio",
                 "role": "Software Development Engineer II",
                 "bullets": [
                     "Built C# and ASP.NET backend services with SQL Server for customer-facing APIs.",
                 ],
             },
             {
-                "company": "IndiaMart",
+                "company": "Keyteller",
                 "role": "Software Development Engineer",
                 "bullets": [
                     "Developed scalable backend services in Node.js and Python with REST API integrations.",
                 ],
             },
             {
-                "company": "AtherMind IntelliDAM — Enterprise Database Activity Monitoring Platform (Project)",
+                "company": "Earlier work — branding, websites and systems",
                 "role": "Product Project",
                 "bullets": [
                     "Built low-latency proxy services with event-driven processing and WebSocket streams.",
@@ -117,9 +118,9 @@ def test_generated_package_keeps_dense_shape_and_sanitizes_experience_claims():
     pkg = ai_engine._package_from_data(data, "ACV Auctions", "Software Engineer IV")
 
     assert [entry["company"] for entry in pkg.tailored_experience] == [
-        "Hughes Network Systems (via Teleperformance)",
-        "IndiaMart",
-        "AtherMind IntelliDAM — Enterprise Database Activity Monitoring Platform (Project)",
+        "ActArtech / Keyteller Portfolio",
+        "Keyteller",
+        "Earlier work — branding, websites and systems",
     ]
     assert [len(entry["bullets"]) for entry in pkg.tailored_experience] == [5, 4, 3]
 
@@ -153,7 +154,7 @@ def test_generated_package_adds_impact_signal_to_weak_bullets():
         },
         "tailoredExperience": [
             {
-                "company": "Hughes Network Systems (via Teleperformance)",
+                "company": "ActArtech / Keyteller Portfolio",
                 "role": "Software Development Engineer II",
                 "bullets": [
                     "Built backend APIs.",
@@ -164,7 +165,7 @@ def test_generated_package_adds_impact_signal_to_weak_bullets():
                 ],
             },
             {
-                "company": "IndiaMart",
+                "company": "Keyteller",
                 "role": "Software Development Engineer",
                 "bullets": [
                     "Built frontend modules.",
@@ -174,7 +175,7 @@ def test_generated_package_adds_impact_signal_to_weak_bullets():
                 ],
             },
             {
-                "company": "AtherMind IntelliDAM — Enterprise Database Activity Monitoring Platform (Project)",
+                "company": "Earlier work — branding, websites and systems",
                 "role": "Product Project",
                 "bullets": [
                     "Built monitoring platform.",
@@ -242,7 +243,7 @@ def test_package_from_data_accepts_saved_snake_case_package():
         },
         "tailored_experience": [
             {
-                "company": "Hughes Network Systems (via Teleperformance)",
+                "company": "ActArtech / Keyteller Portfolio",
                 "role": "Software Development Engineer II",
                 "bullets": ["Built backend APIs for production workloads."],
             }
@@ -261,7 +262,7 @@ def test_package_from_data_accepts_saved_snake_case_package():
 
 
 def test_clean_headline_accepts_valid_anchored_line():
-    h = "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres | @Hughes · ex-IndiaMart"
+    h = "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres | @ActArtech"
     assert ai_engine._clean_headline(h) == h
 
 
@@ -275,24 +276,27 @@ def test_clean_headline_falls_back_when_anchor_missing():
 
 
 def test_clean_headline_falls_back_when_too_long():
-    too_long = "X" * 80 + " | @Hughes · ex-IndiaMart"  # 104 chars
+    # Build the over-length string from the real limit and the real anchor so the
+    # test does not depend on the anchor's character count.
+    too_long = "X" * (ai_engine.HEADLINE_MAX_CHARS + 20) + " | " + ai_engine.HEADLINE_ANCHOR
+    assert len(too_long) > ai_engine.HEADLINE_MAX_CHARS
     assert ai_engine._clean_headline(too_long) == ai_engine.DEFAULT_HEADLINE
 
 
 def test_clean_headline_collapses_whitespace_and_newlines():
-    messy = "Backend Engineer  |\n APIs · Postgres | @Hughes · ex-IndiaMart"
+    messy = "Backend Engineer  |\n APIs · Postgres | @ActArtech"
     cleaned = ai_engine._clean_headline(messy)
     assert "\n" not in cleaned
     assert "  " not in cleaned
-    assert cleaned.endswith("@Hughes · ex-IndiaMart")
+    assert cleaned.endswith("@ActArtech")
 
 
 def test_package_from_data_extracts_headline():
     data = {
-        "headline": "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres | @Hughes · ex-IndiaMart",
+        "headline": "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres | @ActArtech",
     }
     pkg = ai_engine._package_from_data(data, "Acme", "Backend Engineer")
-    assert pkg.headline.endswith("@Hughes · ex-IndiaMart")
+    assert pkg.headline.endswith("@ActArtech")
     assert pkg.headline.startswith("Backend-Leaning")
 
 

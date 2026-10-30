@@ -16,6 +16,9 @@ load_dotenv()
 # ── API Keys ────────────────────────────────────────────────────────────────
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "")
+# Local LLM via Ollama (OpenAI-compatible). Empty disables it.
+OLLAMA_BASE_URL     = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL        = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 HUNTER_API_KEY      = os.getenv("HUNTER_API_KEY", "")          # hunter.io
 APOLLO_API_KEY      = os.getenv("APOLLO_API_KEY", "")          # apollo.io
 SNOV_API_KEY        = os.getenv("SNOV_API_KEY", "")            # snov.io

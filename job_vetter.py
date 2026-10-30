@@ -1,18 +1,24 @@
 """
 job_vetter.py — AI pre-screening to evaluate scraped jobs against strict user criteria.
 
-Criteria:
+Criteria (Alaa, US-based; adapted from the author's India-based original):
 1. Product-based company (no agencies/consultancies).
-2. Remote (Global or India) OR located in India.
-3. CTC > 20 LPA (or equivalent USD, e.g. >$25k-$30k).
-4. Any software developer role.
-5. Ignore experience requirements.
+2. Remote (global, allowing candidates from the United States) OR located in the United States.
+   Roles located outside the United States are skipped, not applied to.
+3. Compensation target: > $150,000 USD.
+4. Any software engineering / development role (AI, platform, full stack, backend, frontend).
+5. Ignore years-of-experience requirements.
 """
 
 import logging
 from typing import Optional, Tuple
 
-from ai_providers import call_provider, call_provider_tracked, ProviderBothResult
+from ai_providers import (
+    call_provider,
+    call_provider_tracked,
+    ProviderBothResult,
+    local_available as _local_available,
+)
 
 log = logging.getLogger(__name__)
 
@@ -37,13 +43,14 @@ def _normalize_stage(value) -> str:
     return stage if stage in VALID_STAGES else "unknown"
 
 
-VETTING_PROMPT = """You are a strict, expert job evaluator for a Senior Software Engineer based in India.
+VETTING_PROMPT = """You are a strict, expert job evaluator for a Senior AI / Platform Software Engineer based in Delaware, United States.
 Your job is to read the provided Job Description and determine if it meets ALL 5 of the following strict criteria:
 
 1. PRODUCT-BASED COMPANY: The company MUST build their own product. STRICTLY REJECT any service-based companies, IT consultancies, dev shops, or agencies (e.g., TCS, Infosys, Wipro, generic web-dev agencies).
-2. LOCATION: The role MUST be Remote (allowing candidates from India) OR located directly in India. 
-   - CRITICAL: If the job says "Remote", ASSUME it allows India unless the text explicitly states "US Citizens Only", "US timezone required", "Must reside in US/EU", or explicitly lists a subset of countries that doesn't include India. If it's a generic "Remote" worldwide startup role, APPROVE IT.
-3. COMPENSATION (STAGE-AWARE): Target is > 20 LPA INR or equivalent (>$25,000 USD).
+2. LOCATION: The role MUST be Remote (allowing candidates from the United States) OR located directly in the United States.
+   - CRITICAL: If the job says "Remote", ASSUME it allows the United States unless the text explicitly states "India only", "EU only", "APAC only", "Must reside in <country>", or explicitly lists a subset of countries that does not include the United States. If it's a generic "Remote" worldwide role, APPROVE IT.
+   - REJECT any role located outside the United States (Canada, India, Germany, the UK, Israel, and every Middle East market are all out of scope).
+3. COMPENSATION (STAGE-AWARE): Target is > $150,000 USD.
    - If the company is EARLY or GROWTH stage (pre-seed through Series C+), funding stage is the pay proxy: DO NOT reject for a missing or unstated salary — assume a funded startup at this stage can meet the target. Reject ONLY if a salary is explicitly stated below the target.
    - If the company is ESTABLISHED (public or large bootstrapped), keep the comp expectation: if salary is explicitly below target, REJECT.
    - If stage is UNKNOWN and salary is unstated, stay permissive for a remote/global product role.
@@ -66,7 +73,7 @@ Structure:
 {{
   "is_approved": true or false,
   "score": <0-100 integer confidence score>,
-  "reason": "<1 sentence explaining why it passed or failed. Be specific about CTC, Product-based, and Location.>",
+  "reason": "<1 sentence explaining why it passed or failed. Be specific about Compensation, Product-based, and Location.>",
   "stage": "<pre_seed|seed|series_a|series_b|series_c_plus|public|bootstrapped|unknown>",
   "stageEvidence": "<short phrase: why you chose this stage>",
   "missingSignals": ["<important missing signal, if any>"]
@@ -129,6 +136,8 @@ def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "
     status is "approved" | "rejected" | "error" — error means the job could
     not be vetted (short JD, rate limit, provider down) and is retryable.
     """
+    requested_provider = provider
+
     if not jd or len(jd) < 100:
         message = "Job description too short or empty."
         return {
@@ -138,10 +147,23 @@ def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "
             "reason": message,
             "error": message,
             "missingSignals": ["job_description"],
-            "engine": {"requested": provider, "answered": None},
+            "engine": {"requested": requested_provider, "answered": None},
         }
 
     prompt = VETTING_PROMPT.format(company=company, role=role, url=url, jd=jd)
+
+    # The requested provider is preserved for reporting. The engine that
+    # actually answers is reported separately, so "requested" stays truthful.
+    # Local Ollama takes over when configured (no cloud key needed). The
+    # upstream "both" mode compares two cloud engines; here the local engine
+    # is the one that actually answers.
+    #
+    # The local engine must win for ANY requested provider when the requested
+    # cloud engine has no key: otherwise provider="gemini" (the default) tries
+    # Gemini, falls back to Groq, and both fail with "client not configured",
+    # turning every job into a spurious rejection.
+    if _local_available() and provider in ("gemini", "both"):
+        provider = "ollama"
 
     if provider == "both":
         result = call_provider(prompt, "both")
@@ -160,12 +182,12 @@ def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "
             "reason": f"Could not vet: {e}",
             "error": str(e),
             "missingSignals": ["ai_vetting"],
-            "engine": {"requested": provider, "answered": None},
+            "engine": {"requested": requested_provider, "answered": None},
         }
 
     vet = _normalize_vetting_result(raw)
     vet["status"] = "approved" if vet["approved"] else "rejected"
-    vet["engine"] = {"requested": provider, "answered": answered}
+    vet["engine"] = {"requested": requested_provider, "answered": answered}
     return vet
 
 

@@ -191,15 +191,32 @@ class TestCallProviderTracked:
         assert engine == "groq"
         assert sleeps == []
 
-    def test_tracked_raises_when_both_engines_fail(self, monkeypatch):
+    def test_tracked_raises_when_all_engines_fail(self, monkeypatch):
         def boom(prompt):
             raise Exception("dead")
 
         monkeypatch.setattr(ai_providers, "call_gemini", boom)
         monkeypatch.setattr(ai_providers, "call_groq", boom)
+        monkeypatch.setattr(ai_providers, "call_ollama", boom)
         monkeypatch.setattr(ai_providers.time, "sleep", lambda s: None)
         with pytest.raises(Exception):
             ai_providers.call_provider_tracked("prompt", "gemini")
+
+    def test_tracked_falls_back_to_local_ollama_when_cloud_engines_fail(self, monkeypatch):
+        """The local engine needs no API key and must still answer.
+
+        Upstream had only Gemini and Groq in the chain, so a machine with no
+        cloud keys rejected every job with "client not configured".
+        """
+        def boom(prompt):
+            raise Exception("client not configured")
+
+        monkeypatch.setattr(ai_providers, "call_gemini", boom)
+        monkeypatch.setattr(ai_providers, "call_groq", boom)
+        monkeypatch.setattr(ai_providers, "call_ollama", lambda p: {"ok": "local"})
+        result, engine = ai_providers.call_provider_tracked("prompt", "gemini")
+        assert result == {"ok": "local"}
+        assert engine == "ollama"
 
     def test_tracked_groq_primary_falls_back_to_gemini(self, monkeypatch):
         def boom(prompt):

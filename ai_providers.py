@@ -14,12 +14,27 @@ from google import genai
 from google.genai import types
 from groq import Groq
 
-from config import GEMINI_API_KEY, GROQ_API_KEY
+from config import GEMINI_API_KEY, GROQ_API_KEY, OLLAMA_BASE_URL, OLLAMA_MODEL
 
 log = logging.getLogger(__name__)
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# Local provider: Ollama's OpenAI-compatible endpoint. No cloud key needed.
+_ollama_client = None
+if OLLAMA_BASE_URL:
+    try:
+        from openai import OpenAI
+
+        _ollama_client = OpenAI(
+            api_key="ollama",
+            base_url=OLLAMA_BASE_URL.rstrip("/") + "/v1",
+            timeout=300.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Ollama client init failed: %s", exc)
+        _ollama_client = None
 
 
 class ProviderError(Exception):
@@ -52,6 +67,26 @@ def call_gemini(prompt: str) -> dict:
     return json.loads(raw)
 
 
+def call_ollama(prompt: str) -> dict:
+    """Local LLM via Ollama's OpenAI-compatible endpoint."""
+    if not _ollama_client:
+        raise ProviderError("Ollama not configured — set OLLAMA_BASE_URL", "ollama")
+    completion = _ollama_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": "You are a strict, expert JSON-only output machine."},
+            {"role": "user", "content": prompt},
+        ],
+        model=OLLAMA_MODEL,
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    content = completion.choices[0].message.content
+    if not content:
+        raise ProviderError("Ollama returned empty content", "ollama")
+    raw = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(raw)
+
+
 def call_groq(prompt: str) -> dict:
     if not groq_client:
         raise ProviderError("Groq client not configured — set GROQ_API_KEY", "groq")
@@ -81,37 +116,78 @@ def _retry_delay_seconds(exc: Exception, default: float = 30.0, cap: float = 60.
     return min(delay, cap)
 
 
+def _engine_ready(name: str) -> bool:
+    """True when the named engine has what it needs to answer."""
+    if name == "gemini":
+        return gemini_client is not None
+    if name == "groq":
+        return groq_client is not None
+    if name == "ollama":
+        return _ollama_client is not None
+    return False
+
+
+def _resolve_chain(provider: str) -> list[str]:
+    """Build the fallback chain for a requested provider.
+
+    The chain is NOT pre-filtered by credentials: an engine with no key raises
+    immediately ("client not configured") and the call falls through to the
+    next one. The local Ollama engine needs no key and is always last, so with
+    no cloud keys configured the request still gets answered locally instead
+    of failing and being recorded as a rejection.
+
+    Upstream assumed Gemini and Groq were always configured, so its chain had
+    no local fallback and every job was rejected when the keys were absent.
+    """
+    if provider == "groq":
+        chain = ["groq", "gemini", "ollama"]
+    elif provider == "ollama":
+        chain = ["ollama", "gemini", "groq"]
+    else:
+        chain = ["gemini", "groq", "ollama"]
+    return chain
+
+
 def call_provider_tracked(prompt: str, provider: str = "gemini") -> Tuple[dict, str]:
     """
     Single-provider call that records which engine actually answered.
     On 429: wait the provider-suggested delay (capped 60s), retry once,
-    then fall back to the other engine. On any other failure: fall back
-    immediately. Raises if both engines fail.
+    then fall back to the next configured engine. On any other failure: fall
+    back immediately. Raises if every engine fails.
     Returns (result_dict, answered_engine).
     """
-    if provider == "groq":
-        primary_name, secondary_name = "groq", "gemini"
-    else:
-        primary_name, secondary_name = "gemini", "groq"
+    chain = _resolve_chain(provider)
+    primary_name = chain[0]
+    secondary_name = chain[1] if len(chain) > 1 else None
 
     def _call(name: str) -> dict:
         # Resolve through module globals at call time so monkeypatching works.
-        return (call_groq if name == "groq" else call_gemini)(prompt)
+        if name == "groq":
+            return call_groq(prompt)
+        if name == "ollama":
+            return call_ollama(prompt)
+        return call_gemini(prompt)
 
-    try:
-        return _call(primary_name), primary_name
-    except Exception as exc:
-        if _is_rate_limited(exc):
-            delay = _retry_delay_seconds(exc)
-            log.warning(f"{primary_name} rate-limited; retrying in {delay:.0f}s…")
-            time.sleep(delay)
-            try:
-                return _call(primary_name), primary_name
-            except Exception as retry_exc:
-                log.warning(f"{primary_name} still failing ({retry_exc}); falling back to {secondary_name}…")
-        else:
-            log.warning(f"{primary_name} failed ({exc}); falling back to {secondary_name}…")
-    return _call(secondary_name), secondary_name
+    last_error: Optional[Exception] = None
+    for index, name in enumerate(chain):
+        try:
+            return _call(name), name
+        except Exception as exc:
+            last_error = exc
+            if index == 0 and _is_rate_limited(exc):
+                delay = _retry_delay_seconds(exc)
+                log.warning(f"{name} rate-limited; retrying in {delay:.0f}s…")
+                time.sleep(delay)
+                try:
+                    return _call(name), name
+                except Exception as retry_exc:
+                    last_error = retry_exc
+                    log.warning(f"{name} still failing ({retry_exc})")
+            else:
+                log.warning(f"{name} failed ({exc})")
+            if index + 1 < len(chain):
+                log.warning(f"falling back to {chain[index + 1]}…")
+    raise last_error if last_error else ProviderError("no AI provider is configured", provider)
 
 
 def call_provider(prompt: str, provider: str = "gemini") -> "dict | ProviderBothResult":
@@ -136,9 +212,35 @@ def call_provider(prompt: str, provider: str = "gemini") -> "dict | ProviderBoth
             log.warning(f"Groq failed in both-mode: {e}")
         return ProviderBothResult(gemini=gemini_result, groq=groq_result)
 
-    # Default: "gemini" with Groq fallback
-    try:
-        return call_gemini(prompt)
-    except Exception as e:
-        log.warning(f"Gemini failed ({e}). Falling back to Groq…")
-        return call_groq(prompt)
+    if provider == "ollama":
+        # Local provider: Ollama first, then Gemini, then Groq.
+        try:
+            return call_ollama(prompt)
+        except Exception as e:
+            log.warning(f"Ollama failed ({e}). Falling back to Gemini…")
+            try:
+                return call_gemini(prompt)
+            except Exception:
+                return call_groq(prompt)
+
+    # Default: resolved chain (gemini -> groq, with local Ollama inserted when
+    # no cloud key is configured).
+    chain = _resolve_chain("gemini")
+    last_error: Optional[Exception] = None
+    for index, name in enumerate(chain):
+        try:
+            if name == "ollama":
+                return call_ollama(prompt)
+            if name == "groq":
+                return call_groq(prompt)
+            return call_gemini(prompt)
+        except Exception as e:
+            last_error = e
+            log.warning(f"{name} failed ({e})")
+            if index + 1 < len(chain):
+                log.warning(f"Falling back to {chain[index + 1]}…")
+    raise last_error if last_error else ProviderError("no AI provider is configured", provider)
+
+def local_available() -> bool:
+    """True when the local Ollama provider is configured and usable."""
+    return _ollama_client is not None

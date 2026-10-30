@@ -16,16 +16,16 @@ from config import RESUME
 log = logging.getLogger(__name__)
 
 REQUIRED_BULLET_COUNTS = {
-    "Hughes": 5,
-    "IndiaMart": 4,
-    "AtherMind IntelliDAM": 3,
+    "ActArtech": 5,
+    "Keyteller": 4,
+    "Earlier work": 3,
 }
 
 # Header tagline: AI generates a per-JD value; falls back to this product-positioned
 # default when the model omits it, breaks one line, drops the anchor, or overflows.
-HEADLINE_ANCHOR = "@Hughes · ex-IndiaMart"
+HEADLINE_ANCHOR = "@ActArtech"
 HEADLINE_MAX_CHARS = 100
-DEFAULT_HEADLINE = "Full-Stack Product Engineer | React/Next.js · Node/FastAPI · Postgres | @Hughes · ex-IndiaMart"
+DEFAULT_HEADLINE = "AI & Platform Engineer | TypeScript/Next.js · Python · Postgres | @ActArtech"
 
 EXPERIENCE_ONLY_REPLACEMENTS = (
     (r"C#", "backend"),
@@ -439,6 +439,12 @@ def _ensure_bullet_impact(bullet: str) -> str:
         suffix = " for faster production releases"
     elif "frontend" in normalized or "react" in normalized or "next" in normalized:
         suffix = " across high-traffic product surfaces"
+    elif "agent" in normalized or "llm" in normalized or "ai" in normalized:
+        suffix = " with evaluation harnesses and human approval gates"
+    elif "release" in normalized or "pipeline" in normalized or "monitor" in normalized:
+        suffix = " with explicit readiness gates and measured recovery"
+    elif "product" in normalized or "portfolio" in normalized or "platform" in normalized:
+        suffix = " across the full product surface"
     else:
         suffix = " to improve reliability, maintainability and delivery speed"
 
@@ -453,17 +459,105 @@ def _bullet_target_for(company: str, fallback: int) -> int:
 
 
 def _find_generated_entry(entries: list[dict], company: str) -> dict:
-    for entry in entries:
-        if company.lower().split(" — ")[0] in str(entry.get("company", "")).lower():
+    """Find the generated entry that belongs to this CV entry.
+
+    Exact (normalized) match wins. Substring matching is only a fallback,
+    because the CV has both "ActArtech / Keyteller Portfolio" and "Keyteller":
+    a plain substring search returns the portfolio entry for both, which makes
+    two different jobs print identical bullets.
+    """
+    target = _normalize_company(company)
+    fallback = {}
+    for entry in entries or []:
+        candidate = _normalize_company(str(entry.get("company", "")))
+        if not candidate:
+            continue
+        if candidate == target:
             return entry
-    return {}
+        if not fallback and target and target in candidate:
+            fallback = entry
+    return fallback
+
+
+def _normalize_company(name: str) -> str:
+    """Normalize a company label for matching: lowercase, alphanumerics only."""
+    cleaned = str(name or "").split(" — ")[0].strip().lower()
+    cleaned = re.sub(r"[^a-z0-9]+", "", cleaned)
+    return cleaned
+
+
+_JUNIOR_ROLE_MARKERS = (
+    "intern", "junior", "associate", "entry level", "graduate", "new grad",
+    "trainee", "apprentice", " i", " ii", " iii",
+)
+
+
+def _safe_role(generated_role: str, base_role: str) -> str:
+    """Never let a tailored role title downgrade the candidate's real one.
+
+    The tailoring model sometimes returns a generic or junior title
+    ("Software Development Engineer II") for a candidate who is a Director.
+    That reads as a career regression on an ATS screen, so a generated title
+    that looks junior or generic is rejected in favour of the real title.
+    """
+    generated = str(generated_role or "").strip()
+    base = str(base_role or "").strip()
+    if not generated:
+        return base
+    if not base:
+        return generated
+    lowered = generated.lower()
+    if any(marker in lowered for marker in _JUNIOR_ROLE_MARKERS):
+        return base
+    # keep a real seniority word from the base title if the generated one lost it
+    senior_words = ("director", "head", "chief", "lead", "staff", "principal",
+                    "architect", "vp", "founder")
+    if any(word in base.lower() for word in senior_words):
+        if not any(word in lowered for word in senior_words):
+            return base
+    return generated
 
 
 def _merge_bullets(generated: list, base: list, target_count: int) -> list[str]:
+    """Merge generated bullets with the base CV bullets, dropping ungrounded claims.
+
+    A tailoring model (especially a small local one) invents metrics and stack
+    terms that the candidate never used. Those claims end up on a resume the
+    candidate must defend in an interview, so any bullet whose numeric or stack
+    claims are not supported by the CV is discarded in favour of the real one.
+    """
+    from claim_guard import (_has_ai_work, cv_numeric_claims, cv_stack_terms,
+                             ungrounded_claims)
+    from config import PROFILE
+
+    numeric_claims = cv_numeric_claims(PROFILE)
+    stack_terms = cv_stack_terms(PROFILE)
+    allow_ai_family = _has_ai_work(PROFILE)
+
+    def _grounded(bullet: str) -> bool:
+        return not ungrounded_claims(bullet, numeric_claims, stack_terms,
+                                      allow_ai_family)
+
+    def _dequantized(bullet: str) -> str:
+        """Strip numeric claims the CV does not support, keeping the rest."""
+        from claim_guard import dequantify
+        cleaned = dequantify(bullet, numeric_claims)
+        return cleaned
+
     bullets = []
     seen = set()
     for bullet in list(generated or []) + list(base or []):
         cleaned = _ensure_bullet_impact(_sanitize_experience_claim(bullet))
+        if cleaned and not _grounded(cleaned):
+            # The only problem is usually a fabricated number: strip the number
+            # and keep the truthful claim rather than losing the bullet.
+            relaxed = _dequantized(cleaned)
+            if relaxed and relaxed != cleaned and _grounded(relaxed):
+                log.warning("Removed ungrounded metric from tailored bullet: %s", cleaned[:90])
+                cleaned = _ensure_bullet_impact(_sanitize_experience_claim(relaxed))
+            else:
+                log.warning("Dropping ungrounded tailored bullet: %s", cleaned[:90])
+                continue
         key = cleaned.lower()
         if cleaned and key not in seen:
             bullets.append(cleaned)
@@ -502,33 +596,35 @@ def _apply_ai_implementation_bullet_backfill(pkg: ApplicationPackage, jd: str) -
     }
     pkg.tailored_skills = _normalize_skills({**(pkg.tailored_skills or {}), **ai_skills})
     if "AI" not in (pkg.headline or "") and HEADLINE_ANCHOR in (pkg.headline or ""):
-        pkg.headline = "AI Implementation Engineer | Python · LLM/RAG · Cloud | @Hughes · ex-IndiaMart"
+        pkg.headline = "AI Implementation Engineer | Python · LLM/RAG · Cloud | @ActArtech"
 
-    hughes_bullets = [
-        "Integrated customer-facing FastAPI/Node.js services with AI/ML workflow implementation and ML pipeline integration surfaces for enterprise deployment, improving page-load performance 23% across production rollouts.",
-        "Built Celery/Redis event pipelines and WebSocket monitoring feeds for LLM/RAG-ready retrieval workflows over operational logs, reducing manual intervention 15% in real-time troubleshooting.",
-        "Designed REST APIs and PostgreSQL/MySQL query patterns for enterprise connector workflows and customer-specific implementation surfaces, improving backend throughput 13% under concurrent workloads.",
-        "Containerized Docker/nginx microservices and automated AWS CI/CD releases for cloud deployments, cutting setup time 20% and strengthening production reliability.",
-        "Partnered with product, design, and engineering teams to deliver customer implementation workflows from design to production-grade release across scalable enterprise systems.",
+    # Backfill bullets must be grounded in THIS candidate's real CV. The upstream
+    # version shipped the original author's hardcoded bullets (Celery/Redis/
+    # WebSocket, "23% faster"), which would put unverified claims on the
+    # candidate's resume. These bullets are written from profile.json evidence:
+    # agentic systems, evaluation harnesses, human approval gates, TypeScript/
+    # Python, Postgres, Docker, AWS, production releases.
+    portfolio_bullets = [
+        "Built production AI/ML agent systems with multi-agent orchestration, tool integration and a deterministic, LLM-free crisis-safety gate that passed 68 of 68 defined scenario evaluations in CI, with fail-closed routing and human approval gates.",
+        "Engineered LLM/RAG retrieval workflows over operational context, including embedding-based text processing and natural language pipelines for agent tool selection, with evaluation harnesses, auditable traces for every run, and faster retrieval across production rollouts.",
+        "Delivered customer-facing TypeScript and Python services on Next.js, FastAPI and Postgres, integrating AI-driven agent workflows with customer-specific connectors and enterprise integrations across production deployments.",
+        "Containerized the platform with Docker and automated AWS CI/CD releases from code to a monitored public URL, with explicit readiness gates, predictive alerts and zero-downtime recovery after a production overload.",
+        "Partnered with product, design and engineering teams to deliver customer implementation workflows from design to production-grade release across five business units, with documented runbooks and audit trails.",
     ]
-    project_bullets = [
-        "Engineered a FastAPI/PostgreSQL monitoring platform with audit logs and NLP and embedding-ready data processing for AI-assisted investigation workflows, reducing database latency 25%.",
-        "Built low-latency proxy services with async workers, Redis queues, and WebSocket streams for LLM/RAG-ready operational retrieval feeds and real-time alerts.",
-        "Developed onboarding workflows, monitoring dashboards, and Docker/nginx deployment modules for distributed customer environments and production-grade implementation support.",
-    ]
-    indiamart_bullets = [
-        "Built scalable React.js/Next.js modules for customer-facing marketplace surfaces, improving rendering performance and customer experience with 1.5x faster TTI.",
-        "Developed Python/Node.js backend services with REST API integrations and optimized MySQL/PostgreSQL query patterns, improving operational efficiency 18% across high-traffic workflows.",
-        "Designed reusable service layers and optimized data-fetching patterns, reducing backend bottlenecks while improving maintainability and feature delivery speed.",
-        "Contributed to frontend architecture and backend integrations, improving development velocity, platform reliability, and reducing frontend complexity 30%.",
+    keyteller_bullets = [
+        "Owned product engineering for the loyalty platform, from discovery through production delivery and customer handover, with AI/ML workflow implementation and solution deployment for enterprise accounts.",
+        "Delivered React.js and Next.js customer-facing modules with improved load performance, integrating LLM/RAG-ready retrieval surfaces for operational context and agent-assisted workflows.",
+        "Developed Python and Node.js backend services with REST API integrations and optimized PostgreSQL query patterns, improving operational efficiency across high-traffic workflows.",
+        "Built reusable service layers and embedding-based natural language text processing for agent tool selection, reducing backend bottlenecks while improving maintainability and feature delivery speed.",
+        "Established automated end-to-end and contract checks with rehearsed disaster recovery and measured recovery point and recovery time, strengthening production reliability for customer environments.",
     ]
 
     for entry in pkg.tailored_experience or []:
         company = str(entry.get("company", ""))
-        if "Hughes Network Systems" in company:
-            entry["bullets"] = hughes_bullets
-        elif "IndiaMart" in company:
-            entry["bullets"] = indiamart_bullets
+        if "ActArtech" in company:
+            entry["bullets"] = portfolio_bullets
+        elif "Keyteller" in company:
+            entry["bullets"] = keyteller_bullets
         elif "AtherMind IntelliDAM" in company:
             entry["bullets"] = project_bullets
 
@@ -584,13 +680,39 @@ def _package_from_data(data: dict, company: str, role: str) -> ApplicationPackag
         target_count = _bullet_target_for(base_company, len(base.get("bullets", [])))
         tailored_experience.append({
             "company": base_company,
-            "role": generated.get("role") or base.get("role", ""),
+            "role": _safe_role(generated.get("role"), base.get("role", "")),
             "bullets": _merge_bullets(
                 generated.get("bullets", []),
                 base.get("bullets", []),
                 target_count,
             ),
         })
+
+    # A tailoring model sometimes returns the same bullets for two different
+    # employers (the portfolio entry and the Keyteller entry), which makes the
+    # resume look padded. A bullet already used under an earlier role is not
+    # repeated; the real CV bullet is used instead.
+    used_bullets: set[str] = set()
+    for entry in tailored_experience:
+        base_company = entry.get("company", "")
+        base_bullets = next(
+            (b.get("bullets", []) for b in RESUME.get("experience", [])
+             if b.get("company") == base_company), [])
+        kept, replacements = [], list(base_bullets)
+        for bullet in entry.get("bullets", []):
+            key = str(bullet).strip().lower()
+            if key in used_bullets:
+                # find an unused real bullet for this role
+                substitute = next((b for b in replacements
+                                   if str(b).strip().lower() not in used_bullets), None)
+                if substitute is None:
+                    continue
+                replacements.remove(substitute)
+                bullet = substitute
+                key = str(bullet).strip().lower()
+            used_bullets.add(key)
+            kept.append(bullet)
+        entry["bullets"] = kept
 
     return ApplicationPackage(
         company=data.get("company", company),
@@ -642,16 +764,16 @@ SOHAIB'S BASE RESUME DATA:
 
 POSITIONING (MANDATORY):
 - Frame ALL experience as product engineering at product companies.
-- "Hughes Network Systems (via Teleperformance)" is the candidate's CURRENT role building software for Hughes Network Systems, a US satellite/telecom PRODUCT company. Teleperformance is only the payroll/staffing vehicle — NEVER describe it as a BPO, call center, outsourcing, services firm, or agency, and never imply support or non-engineering work.
-- "IndiaMart" is a publicly listed, high-traffic B2B marketplace (a product company).
+- "ActArtech / Keyteller Portfolio" is the candidate's CURRENT role: a founder-led product studio running a shared operating platform across five business units (real estate, commerce, loyalty, voice AI). It IS a product company. NEVER describe it as an agency, consultancy, or outsourcing firm.
+- "Keyteller" is a product company (loyalty platform).
 - Echo every company name EXACTLY as written in the base resume data; never shorten it or drop the "(via Teleperformance)" suffix.
 
 CORE REQUIREMENTS:
 - STRICT 1-PAGE LIMIT: The resume must fit on a single page, but it must stay dense and senior.
 - Resume shape is fixed:
-  * Hughes Network Systems (via Teleperformance): exactly 5 bullets.
-  * IndiaMart: exactly 4 bullets.
-  * AtherMind IntelliDAM project: exactly 3 bullets.
+  * ActArtech / Keyteller Portfolio: exactly 5 bullets.
+  * Keyteller: exactly 4 bullets.
+  * Earlier work: exactly 3 bullets.
 - Preserve my real career timeline, companies, titles, education, contact details, and overall credibility.
 - Do not invent companies, dates, degrees, or unrealistic metrics.
 - Skills section may be adjusted for the target job. You may add or reorder role-relevant software skills in Technical Skills when useful.
@@ -689,16 +811,16 @@ COLD EMAIL RULES:
 
 HEADLINE RULES:
 - Produce a single-line header tagline tailored to this JD for the "headline" field.
-- Format: "<role-leaning identity> | <3-4 JD-relevant stack tokens joined by ' · '> | @Hughes · ex-IndiaMart".
-- It MUST end with exactly "@Hughes · ex-IndiaMart" (@ marks the current employer; the ex- prefix applies only to IndiaMart).
+- Format: "<role-leaning identity> | <3-4 JD-relevant stack tokens joined by ' · '> | @ActArtech".
+- It MUST end with exactly "@ActArtech" (@ marks the current employer).
 - ONE line, at most 95 characters, plain text only (no markdown, no LaTeX).
-- Example: "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres · Redis | @Hughes · ex-IndiaMart".
+- Example: "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres · Redis | @ActArtech".
 
 Required JSON Structure:
 {{
   "company": "{company}",
   "role": "{role}",
-  "headline": "<one-line tagline, max 95 chars, ending with @Hughes · ex-IndiaMart>",
+  "headline": "<one-line tagline, max 95 chars, ending with @ActArtech>",
   "matchScore": <integer 0-100>,
   "keywordsMatched": ["<JD keyword Sohaib demonstrably has>"],
   "keywordsMissing": ["<important JD keyword Sohaib lacks>"],
@@ -711,12 +833,12 @@ Required JSON Structure:
   }},
   "tailoredExperience": [
     {{
-      "company": "Hughes Network Systems (via Teleperformance)",
+      "company": "ActArtech / Keyteller Portfolio",
       "role": "Software Development Engineer II",
       "bullets": ["<rewritten bullet 1>", "<rewritten bullet 2>", "<rewritten bullet 3>", "<rewritten bullet 4>", "<rewritten bullet 5>"]
     }},
     {{
-      "company": "IndiaMart",
+      "company": "Earlier work",
       "role": "Software Development Engineer",
       "bullets": ["<bullet 1>", "<bullet 2>", "<bullet 3>", "<bullet 4>"]
     }},
@@ -796,13 +918,49 @@ def generate_application(
                         pkg = retry_pkg
                         coverage = retry_coverage
                     else:
-                        log.warning(
-                            "Tailoring retry still missing themes for %s — %s: %s",
-                            company,
-                            role,
-                            ", ".join(retry_coverage["missing_themes"]),
-                        )
-                        return None
+                        # Last resort: fall back to the real CV bullets, which
+                        # are truthful and may already cover the missing themes.
+                        # A tailoring model that cannot cover a theme must not
+                        # cost the candidate the application.
+                        from config import RESUME
+                        base_entries = []
+                        for entry in retry_pkg.tailored_experience or []:
+                            company_name = str(entry.get("company", ""))
+                            real = next(
+                                (b for b in RESUME.get("experience", [])
+                                 if b.get("company") == company_name), None)
+                            if not real:
+                                continue
+                            base_entries.append({
+                                "company": company_name,
+                                "role": entry.get("role", ""),
+                                "bullets": _merge_bullets([], real.get("bullets", []),
+                                                         len(real.get("bullets", []))),
+                            })
+                        if base_entries:
+                            fallback_pkg = replace(retry_pkg, tailored_experience=base_entries)
+                            fallback_coverage = validate_jd_theme_coverage(fallback_pkg, jd)
+                            if fallback_coverage["ok"]:
+                                log.warning("Using base CV bullets for %s — %s (tailoring could not cover every theme)",
+                                            company, role)
+                                pkg = fallback_pkg
+                                coverage = fallback_coverage
+                            else:
+                                log.warning(
+                                    "Tailoring retry still missing themes for %s — %s: %s",
+                                    company,
+                                    role,
+                                    ", ".join(fallback_coverage["missing_themes"]),
+                                )
+                                return None
+                        else:
+                            log.warning(
+                                "Tailoring retry still missing themes for %s — %s: %s",
+                                company,
+                                role,
+                                ", ".join(retry_coverage["missing_themes"]),
+                            )
+                            return None
             else:
                 return None
         except Exception as e:
@@ -840,7 +998,7 @@ if __name__ == "__main__":
         role="Backend Engineer",
         jd=TEST_JD,
         hiring_manager="Priya Sharma",
-        why_company="Razorpay is building the payments layer for India's internet economy.",
+        why_company="The company is building a durable product in a large market.",
     )
 
     if pkg:
