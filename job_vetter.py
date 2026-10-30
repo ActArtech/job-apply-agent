@@ -127,7 +127,8 @@ def vetting_status(vetting: Optional[dict]) -> Optional[str]:
     return "approved" if vetting.get("approved") is True else "rejected"
 
 
-def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "gemini") -> dict:
+def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "gemini",
+                   location: str = "") -> dict:
     """
     Evaluates job against 5-rule criteria using AI.
 
@@ -148,6 +149,25 @@ def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "
             "error": message,
             "missingSignals": ["job_description"],
             "engine": {"requested": requested_provider, "answered": None},
+        }
+
+    # Deterministic gate first. The vetting model writes its justification in
+    # prose and a local model will claim "located in the United States" for a
+    # posting that never mentions the US. A fabricated reason must not be able
+    # to carry an approval, so location and language are checked against the
+    # actual job text before the AI verdict is trusted.
+    from vet_guard import check_job
+    guard = check_job(jd, location)
+    if not guard["ok"]:
+        return {
+            "status": "rejected",
+            "approved": False,
+            "score": 0,
+            "reason": "; ".join(guard["reasons"]),
+            "error": None,
+            "missingSignals": ["location" if not guard["location"]["ok"] else "language"],
+            "engine": {"requested": provider, "answered": None},
+            "guard": {"ok": False, "reasons": guard["reasons"]},
         }
 
     prompt = VETTING_PROMPT.format(company=company, role=role, url=url, jd=jd)

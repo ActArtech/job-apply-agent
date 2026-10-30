@@ -62,6 +62,27 @@ def run_phase1(root="artifacts", max_per_source=20, log_fn=None, emit_fn=None):
     }
 
 
+def _vet_with_location(**kwargs):
+    """Call vet_job_detail, passing location only if the callable accepts it.
+
+    Keeps compatibility with test doubles and older callables that do not
+    take the location argument.
+    """
+    import inspect
+
+    target = vet_job_detail
+    try:
+        signature = inspect.signature(target)
+    except (TypeError, ValueError):
+        signature = None
+    if signature is not None:
+        accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD
+                              for p in signature.parameters.values())
+        if not accepts_var_kw and "location" not in signature.parameters:
+            kwargs.pop("location", None)
+    return target(**kwargs)
+
+
 def run_phase2(root="artifacts", max_per_source=20, log_fn=None, emit_fn=None, provider="gemini", force=False):
     def log(msg):
         if log_fn:
@@ -97,12 +118,13 @@ def run_phase2(root="artifacts", max_per_source=20, log_fn=None, emit_fn=None, p
         emit({"type": "job_start", "job_id": job_id, "company": company, "title": title, "index": index, "total": total})
         log(f"[{index}/{total}] {company} — {title}")
         jd = (store.job_dir(job_id) / "jd.txt").read_text(encoding="utf-8")
-        vetting = vet_job_detail(
+        vetting = _vet_with_location(
             company=row["company"],
             role=row["title"],
             url=row.get("url", ""),
             jd=jd,
             provider=provider,
+            location=row.get("location", ""),
         )
         vetting["created_at"] = utc_now()
         store.write_json(job_id, "vetting.json", vetting)
@@ -275,11 +297,12 @@ def run_phase2_single(root="artifacts", job_id=None, log_fn=None):
 
     log(f"vetting {row.get('company')} — {row.get('title')}…")
     jd = (store.job_dir(job_id) / "jd.txt").read_text(encoding="utf-8")
-    vetting = vet_job_detail(
+    vetting = _vet_with_location(
         company=row["company"],
         role=row["title"],
         url=row.get("url", ""),
         jd=jd,
+        location=row.get("location", ""),
     )
     vetting["created_at"] = utc_now()
     store.write_json(job_id, "vetting.json", vetting)

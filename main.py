@@ -449,6 +449,8 @@ def main():
 
     phase2_p = sub.add_parser("phase2", help="Run isolated Phase 2 (Vet)")
     phase2_p.add_argument("--max", type=int, default=20)
+    phase2_p.add_argument("--force", action="store_true",
+                          help="Re-vet jobs that already have a verdict")
 
     phase3_p = sub.add_parser("phase3", help="Generate artifacts for one curated job")
     phase3_p.add_argument("--job-id", required=True)
@@ -483,7 +485,7 @@ def main():
         print_phase_result(run_phase1(max_per_source=args.max))
     elif args.command == "phase2":
         from phase_runner import run_phase2
-        print_phase_result(run_phase2(max_per_source=args.max))
+        print_phase_result(run_phase2(max_per_source=args.max, force=args.force))
     elif args.command == "phase3":
         from phase_runner import run_phase3
         print_phase_result(run_phase3(job_id=args.job_id))
