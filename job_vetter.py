@@ -54,6 +54,7 @@ Your job is to read the provided Job Description and determine if it meets ALL 5
    - If the company is EARLY or GROWTH stage (pre-seed through Series C+), funding stage is the pay proxy: DO NOT reject for a missing or unstated salary — assume a funded startup at this stage can meet the target. Reject ONLY if a salary is explicitly stated below the target.
    - If the company is ESTABLISHED (public or large bootstrapped), keep the comp expectation: if salary is explicitly below target, REJECT.
    - If stage is UNKNOWN and salary is unstated, stay permissive for a remote/global product role.
+   - IMPORTANT: an UNSTATED salary is NEVER on its own a reason to reject. Only an EXPLICITLY stated salary below the target is a rejection. If the JD does not state a salary, do not reject for compensation; say "compensation not stated" in the reason and approve.
 4. ROLE: It must be a Software Engineering / Development role (Backend, Frontend, Full Stack, iOS, Android, etc.).
 5. EXPERIENCE: Do NOT reject based on high Years of Experience requirements. If it matches the other criteria, approve it.
 
@@ -168,6 +169,23 @@ def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "
             "missingSignals": ["location" if not guard["location"]["ok"] else "language"],
             "engine": {"requested": provider, "answered": None},
             "guard": {"ok": False, "reasons": guard["reasons"]},
+        }
+    # A stated salary below the target is a hard rejection. An unstated salary
+    # is not: the prompt says to stay permissive for a remote product role when
+    # the funding stage is unknown, and a small model often ignores that and
+    # rejects for "unknown funding stage" alone.
+    from vet_guard import compensation_verdict
+    comp = compensation_verdict(jd)
+    if not comp["ok"]:
+        return {
+            "status": "rejected",
+            "approved": False,
+            "score": 0,
+            "reason": comp["reason"],
+            "error": None,
+            "missingSignals": ["compensation"],
+            "engine": {"requested": provider, "answered": None},
+            "guard": {"ok": False, "reasons": [comp["reason"]]},
         }
 
     prompt = VETTING_PROMPT.format(company=company, role=role, url=url, jd=jd)

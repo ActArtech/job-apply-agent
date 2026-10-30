@@ -171,3 +171,68 @@ def check_job(jd: str, location: str = "") -> dict:
         "location": loc,
         "reasons": reasons,
     }
+
+
+# --- Compensation gate -------------------------------------------------------
+# The vetting prompt states the rule; a small model often ignores it and
+# rejects a role for "unknown funding stage" even when the salary is unstated.
+# These checks enforce the same rule deterministically.
+
+# Salary figures written in the JD, normalised to a number.
+_SALARY_PATTERNS = (
+    re.compile(r"\$\s*(\d{2,3})\s*k\b", re.IGNORECASE),
+    re.compile(r"\$\s*(\d{3,6})\s*(?:,\d{3})*\b(?![\d,]*\s*k)", re.IGNORECASE),
+    re.compile(r"\b(\d{2,3})\s*k\s*(?:usd|salary|base)?\b", re.IGNORECASE),
+)
+_HOURLY_PATTERNS = (
+    re.compile(r"\$\s*(\d{2,3})\s*(?:-\s*\$\s*(\d{2,3}))?\s*(?:/|per\s*)\s*h(?:r|our)", re.IGNORECASE),
+    re.compile(r"\b(\d{2,3})\s*-\s*(\d{2,3})\s*(?:usd|euros?|pounds?)?\s*(?:/|per\s*)\s*h(?:r|our)", re.IGNORECASE),
+)
+
+
+def _salary_figures(text: str) -> list[float]:
+    """Annual salary figures stated in the text, in USD."""
+    figures = []
+    for match in re.finditer(r"\$\s*(\d{2,3})\s*k\b", text, re.IGNORECASE):
+        figures.append(float(match.group(1)) * 1000)
+    for match in re.finditer(r"\$\s*(\d{3,6})\s*(,\d{3})*\b", text):
+        raw = match.group(1) + (match.group(2) or "")
+        try:
+            value = float(raw.replace(",", ""))
+        except ValueError:
+            continue
+        if 10000 <= value <= 1000000:
+            figures.append(value)
+    return figures
+
+
+def _hourly_figures(text: str) -> list[float]:
+    """Hourly rates stated in the text, converted to an annual figure."""
+    figures = []
+    for pattern in _HOURLY_PATTERNS:
+        for match in pattern.finditer(text):
+            low = float(match.group(1))
+            high = float(match.group(2)) if match.lastindex and match.lastindex >= 2 and match.group(2) else low
+            figures.append(max(low, high) * 2080)  # 40h x 52 weeks
+    return figures
+
+
+def compensation_verdict(jd: str, stage: str = "unknown") -> dict:
+    """Reject only when the JD states a salary below the target.
+
+    An unstated salary is NOT a rejection reason: the vetting prompt says to
+    stay permissive for a remote/global product role when the stage is
+    unknown, and to treat funding as the proxy at an early/growth stage.
+    """
+    text = str(jd or "")
+    target = 150000.0
+    figures = _salary_figures(text) + _hourly_figures(text)
+    if not figures:
+        return {"ok": True, "reason": "no salary stated (permitted for remote product roles)",
+                "stated_max": None, "unknown": True}
+    stated_max = max(figures)
+    if stated_max < target:
+        return {"ok": False,
+                "reason": f"stated compensation tops out at ${stated_max:,.0f}, below the $150,000 target",
+                "stated_max": stated_max}
+    return {"ok": True, "reason": f"stated compensation reaches ${stated_max:,.0f}", "stated_max": stated_max}

@@ -72,3 +72,46 @@ def test_vet_job_detail_rejects_non_english_before_calling_the_model(monkeypatch
     assert result["approved"] is False
     assert result["status"] == "rejected"
     assert called["count"] == 0
+
+
+def test_unstated_salary_is_not_a_rejection():
+    """An unstated salary is never a reason to reject on its own."""
+    jd = "Senior backend engineer at a product company. Fully remote worldwide."
+    result = vet_guard.compensation_verdict(jd)
+    assert result["ok"] is True
+    assert result.get("unknown") is True
+
+
+def test_explicitly_low_salary_is_rejected():
+    jd = "Senior backend engineer. Salary: $120,000 per year plus equity."
+    result = vet_guard.compensation_verdict(jd)
+    assert result["ok"] is False
+
+
+def test_hourly_rate_below_target_is_rejected():
+    jd = "Contract backend engineer, $60 per hour, remote."
+    result = vet_guard.compensation_verdict(jd)
+    assert result["ok"] is False
+
+
+def test_high_salary_is_allowed():
+    jd = "Senior backend engineer. Salary: $190,000 per year plus equity."
+    assert vet_guard.compensation_verdict(jd)["ok"] is True
+
+
+def test_vet_job_detail_rejects_low_stated_salary():
+    import job_vetter
+
+    called = {"count": 0}
+
+    def must_not_run(prompt, provider):
+        called["count"] += 1
+        return ({"is_approved": True, "score": 100, "reason": "fine"}, "ollama")
+
+    import job_vetter as jv
+    jv.call_provider_tracked = must_not_run
+    jd = ("Senior backend engineer building product APIs. Remote in the United States. "
+          "The base salary range is $90,000 to $110,000 per year. " * 3)
+    result = jv.vet_job_detail("Acme", "Backend", "https://x", jd)
+    assert result["approved"] is False
+    assert "150,000" in result["reason"]
