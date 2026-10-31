@@ -331,11 +331,11 @@ def cv_vocabulary(profile: dict) -> set[str]:
     """
     corpus = cv_grounding_corpus(profile).lower()
     words = set()
-    for token in re.findall(r"[a-z][a-z0-9+#.-]{2,}", corpus):
+    for token in re.findall(r"[a-z][a-z0-9+#./-]{2,}", corpus):
         token = token.rstrip(".")
         words.add(token)
         for part in re.split(r"[/#+.-]", token):
-            if len(part) >= 3:
+            if len(part) >= 2:
                 words.add(part)
     return words
 
@@ -345,7 +345,7 @@ def novel_domain_terms(bullet: str, vocabulary: set[str]) -> list[str]:
     novel = []
     for match in _WORD_RE.finditer(str(bullet or "")):
         token = match.group(0).lower().rstrip(".")
-        parts = [p for p in re.split(r"[/#+.-]", token) if len(p) >= 3] or [token]
+        parts = [p for p in re.split(r"[/#+.-]", token) if len(p) >= 2] or [token]
         for part in parts:
             if part in vocabulary or part in _GENERIC_WORDS:
                 continue
