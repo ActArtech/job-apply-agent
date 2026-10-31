@@ -103,3 +103,30 @@ def test_merge_bullets_keeps_bullet_after_dequantifying():
     generated = ["Implemented a data processing pipeline using Go and Node.js, improving search relevancy by 35%."]
     merged = ai_engine._merge_bullets(generated, base, target_count=3)
     assert any("35%" not in b and "search relevancy" in b for b in merged)
+
+
+def test_novel_domain_terms_detects_invented_field_of_work():
+    """A bullet may not introduce a domain the CV never mentions."""
+    vocab = claim_guard.cv_vocabulary(PROFILE)
+    bullet = ("Developed automated threat hunting workflows using Python and JavaScript, "
+              "reducing the false positives.")
+    novel = claim_guard.novel_domain_terms(bullet, vocab)
+    assert "threat" in novel
+    assert "hunting" in novel
+
+
+def test_real_cv_bullets_have_no_novel_terms():
+    for entry in PROFILE["experience"]:
+        for bullet in entry["bullets"]:
+            vocab = claim_guard.cv_vocabulary(PROFILE)
+            assert claim_guard.novel_domain_terms(bullet, vocab) == [], bullet
+
+
+def test_ungrounded_claims_flags_invented_domain():
+    numeric = claim_guard.cv_numeric_claims(PROFILE)
+    stack = claim_guard.cv_stack_terms(PROFILE)
+    vocab = claim_guard.cv_vocabulary(PROFILE)
+    bullet = ("Led a team of 5 engineers in building a real-time fraud detection system, "
+              "reducing fraud incidents.")
+    problems = claim_guard.ungrounded_claims(bullet, numeric, stack, True, vocab)
+    assert any("fraud" in p for p in problems)

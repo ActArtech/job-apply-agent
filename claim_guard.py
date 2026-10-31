@@ -114,7 +114,8 @@ def _has_ai_work(profile: dict) -> bool:
 
 
 def ungrounded_claims(bullet: str, numeric_claims: set[str], stack_terms: set[str],
-                      allow_ai_family: bool = True) -> list[str]:
+                      allow_ai_family: bool = True,
+                      vocabulary: set[str] = None) -> list[str]:
     """Return the list of unsupported claims in a tailored bullet.
 
     allow_ai_family: when the candidate's CV shows AI work, discipline-level
@@ -136,6 +137,14 @@ def ungrounded_claims(bullet: str, numeric_claims: set[str], stack_terms: set[st
         if not re.search(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", lowered):
             continue
         problems.append(f"stack term {term!r} is not in the CV")
+
+    # Domain vocabulary: a bullet may not introduce a field of work the CV
+    # never mentions (fraud detection, threat hunting, tax engines).
+    if vocabulary is not None:
+        novel = novel_domain_terms(bullet, vocabulary)
+        if len(novel) > NOVEL_TERM_LIMIT:
+            problems.append(
+                "introduces work not in the CV: " + ", ".join(novel[:6]))
     return problems
 
 
@@ -170,12 +179,14 @@ def verify_bullets(bullets: Iterable[str], profile: dict) -> dict:
     numeric_claims = cv_numeric_claims(profile)
     stack_terms = cv_stack_terms(profile)
     allow_ai_family = _has_ai_work(profile)
+    vocabulary = cv_vocabulary(profile)
     clean, flagged = [], []
     for bullet in bullets or []:
         text = str(bullet or "").strip()
         if not text:
             continue
-        problems = ungrounded_claims(text, numeric_claims, stack_terms, allow_ai_family)
+        problems = ungrounded_claims(text, numeric_claims, stack_terms, allow_ai_family,
+                                      vocabulary)
         if problems:
             flagged.append((text, problems))
         else:
@@ -265,3 +276,85 @@ def dequantify(bullet: str, numeric_claims: set[str]) -> str:
     if not text or text.endswith((",", "and", "to", "in", "for", "the")):
         return ""  # unusable: caller falls back to the real CV bullet
     return text
+
+
+# --- Domain vocabulary grounding ---------------------------------------------
+# A tailored bullet can pass the number and stack checks while still inventing a
+# whole field of work. Example seen on a Stripe Abuse Research Engineer resume:
+# "Developed automated threat hunting workflows ... reducing the false positives"
+# and "Led a team of 5 engineers in building a real-time fraud detection system".
+# Python and JavaScript are in the CV, so the stack check passed, but fraud
+# detection and threat hunting are not Alaa's work.
+#
+# The fix: a tailored bullet may not introduce domain vocabulary that does not
+# already appear in the CV. Generic engineering language is allowed.
+
+# Words that carry no domain meaning on their own.
+_GENERIC_WORDS = frozenset("""
+a an the and or of to in on at for with without from by as is are was were be been being
+this that these those it its their his her they them we us our you your i me my
+develop developed develops building built builds creating created creates creating
+implement implemented implements implementing design designed designs designing
+engineer engineered engineers engineering lead led leads leading direct directed directs
+deliver delivered delivers delivering ship shipped shipping launch launched
+manage managed managing coordinate coordinated coordinating own owned owns
+improve improved improves improving reduce reduced reduces reducing increase increased
+enabling enable enables support supported supports maintain maintained maintains
+standardize standardized standardizing translate translated translating collaborate
+collaborated collaborating partner partnered prepare prepared preparing
+introduce introduced introducing ran run runs migrate migrated migrated
+scale scaled scaling configure configured configuring automate automated automating
+deploy deployed deploying monitor monitored monitoring test tested testing
+document documented documenting present presented present
+across within using use used via per each every all any some more less
+production prod enterprise platform product system service service services
+team teams work working workflow workflows process processes pipeline pipelines
+application applications app apps component components module modules
+customer customers client clients end users user users business company
+data code api apis web web-based software technology technologies
+real-time high-traffic concurrent scalable robust reliable modern flexible secure
+measurable metric metrics scope impact scale performance reliability maintainability
+velocity delivery monitoring observability latency throughput
+day-to-day hands-on end-to-end full-stack full stack
+one two three four five six seven eight nine ten
+first second third new current existing key core main primary secondary
+""".split())
+
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9+#./-]{2,}")
+
+
+def cv_vocabulary(profile: dict) -> set[str]:
+    """Every meaningful word that appears in the CV.
+
+    Compound tokens are split on their separators, so "LLM/RAG" contributes
+    both "llm" and "rag" rather than an unmatched "llm/rag".
+    """
+    corpus = cv_grounding_corpus(profile).lower()
+    words = set()
+    for token in re.findall(r"[a-z][a-z0-9+#.-]{2,}", corpus):
+        token = token.rstrip(".")
+        words.add(token)
+        for part in re.split(r"[/#+.-]", token):
+            if len(part) >= 3:
+                words.add(part)
+    return words
+
+
+def novel_domain_terms(bullet: str, vocabulary: set[str]) -> list[str]:
+    """Domain words in a bullet that do not appear in the CV."""
+    novel = []
+    for match in _WORD_RE.finditer(str(bullet or "")):
+        token = match.group(0).lower().rstrip(".")
+        parts = [p for p in re.split(r"[/#+.-]", token) if len(p) >= 3] or [token]
+        for part in parts:
+            if part in vocabulary or part in _GENERIC_WORDS:
+                continue
+            if len(part) < 5:
+                continue
+            novel.append(part)
+    return sorted(set(novel))
+
+
+# A bullet may introduce at most this many new domain words before it is
+# treated as claiming work the candidate never did.
+NOVEL_TERM_LIMIT = 2

@@ -6,7 +6,7 @@ Run standalone to test:
 """
 
 import json, logging, re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 from ai_providers import call_provider, ProviderBothResult
@@ -527,16 +527,17 @@ def _merge_bullets(generated: list, base: list, target_count: int) -> list[str]:
     claims are not supported by the CV is discarded in favour of the real one.
     """
     from claim_guard import (_has_ai_work, cv_numeric_claims, cv_stack_terms,
-                             ungrounded_claims)
+                             cv_vocabulary, ungrounded_claims)
     from config import PROFILE
 
     numeric_claims = cv_numeric_claims(PROFILE)
     stack_terms = cv_stack_terms(PROFILE)
     allow_ai_family = _has_ai_work(PROFILE)
+    vocabulary = cv_vocabulary(PROFILE)
 
     def _grounded(bullet: str) -> bool:
         return not ungrounded_claims(bullet, numeric_claims, stack_terms,
-                                      allow_ai_family)
+                                      allow_ai_family, vocabulary)
 
     def _dequantized(bullet: str) -> str:
         """Strip numeric claims the CV does not support, keeping the rest."""
@@ -896,11 +897,14 @@ def generate_application(
     pkg = _package_from_data(result, company, role)
     coverage = validate_jd_theme_coverage(pkg, jd)
     if not coverage["ok"] and coverage["required_themes"]:
+        missing = ", ".join(coverage["missing_themes"]) or "none"
+        weak = len(coverage.get("ats_weak_bullets", []))
         log.warning(
-            "Tailoring coverage failed for %s — %s; missing themes: %s. Retrying once.",
+            "Tailoring coverage failed for %s — %s; missing themes: %s; weak bullets: %d. Retrying once.",
             company,
             role,
-            ", ".join(coverage["missing_themes"]),
+            missing,
+            weak,
         )
         retry_prompt = _build_tailoring_retry_prompt(prompt, coverage)
         try:
@@ -940,7 +944,12 @@ def generate_application(
                         if base_entries:
                             fallback_pkg = replace(retry_pkg, tailored_experience=base_entries)
                             fallback_coverage = validate_jd_theme_coverage(fallback_pkg, jd)
-                            if fallback_coverage["ok"]:
+                            # The base CV covers every required theme. A bullet
+                            # that lacks an impact marker is a quality issue, not
+                            # a coverage failure: the real CV bullets are still
+                            # truthful and must not block the application.
+                            themes_covered = not fallback_coverage["missing_themes"]
+                            if themes_covered:
                                 log.warning("Using base CV bullets for %s — %s (tailoring could not cover every theme)",
                                             company, role)
                                 pkg = fallback_pkg
