@@ -197,6 +197,7 @@ class TestCallProviderTracked:
 
         monkeypatch.setattr(ai_providers, "call_gemini", boom)
         monkeypatch.setattr(ai_providers, "call_groq", boom)
+        monkeypatch.setattr(ai_providers, "call_minimax", boom)
         monkeypatch.setattr(ai_providers, "call_ollama", boom)
         monkeypatch.setattr(ai_providers.time, "sleep", lambda s: None)
         with pytest.raises(Exception):
@@ -213,6 +214,7 @@ class TestCallProviderTracked:
 
         monkeypatch.setattr(ai_providers, "call_gemini", boom)
         monkeypatch.setattr(ai_providers, "call_groq", boom)
+        monkeypatch.setattr(ai_providers, "call_minimax", boom)
         monkeypatch.setattr(ai_providers, "call_ollama", lambda p: {"ok": "local"})
         result, engine = ai_providers.call_provider_tracked("prompt", "gemini")
         assert result == {"ok": "local"}

@@ -130,3 +130,22 @@ def test_ungrounded_claims_flags_invented_domain():
               "reducing fraud incidents.")
     problems = claim_guard.ungrounded_claims(bullet, numeric, stack, True, vocab)
     assert any("fraud" in p for p in problems)
+
+
+def test_invented_domain_headline_is_rejected():
+    """The headline is the most visible line: a model put a job's domain
+    ("Threat Hunting · FT3 Taxonomy") straight into it for a candidate who has
+    never done threat hunting."""
+    import ai_engine
+    data = {"headline": "Product-Focused Engineer | Threat Hunting · FT3 Taxonomy · Agentic Testing | @ActArtech"}
+    pkg = ai_engine._package_from_data(data, "Stripe", "Abuse Research Engineer")
+    assert "Threat Hunting" not in pkg.headline
+    assert "Taxonomy" not in pkg.headline
+    assert pkg.headline.endswith("@ActArtech")
+
+
+def test_normal_headline_is_kept():
+    import ai_engine
+    data = {"headline": "Backend-Leaning Full-Stack Engineer | Async APIs · Postgres | @ActArtech"}
+    pkg = ai_engine._package_from_data(data, "Acme", "Backend Engineer")
+    assert pkg.headline.startswith("Backend-Leaning")

@@ -669,6 +669,45 @@ def _clean_headline(value) -> str:
     return text
 
 
+def _grounded_headline(value: str) -> str:
+    """Return the tailored headline only if it introduces no invented domain.
+
+    The headline is the most visible line on the resume, and a model will put
+    a job's domain straight into it: a Stripe Abuse Research Engineer listing
+    produced "Threat Hunting · FT3 Taxonomy" for a candidate who has never
+    done either. The bullets are guarded; the headline was not.
+    """
+    headline = _clean_headline(value)
+    if headline == DEFAULT_HEADLINE:
+        return headline
+    from claim_guard import (_has_ai_work, _normalize_number, cv_numeric_claims,
+                             cv_stack_terms, cv_vocabulary, novel_domain_terms,
+                             NOVEL_TERM_LIMIT)
+    from config import PROFILE
+    problems = []
+    numeric_claims = cv_numeric_claims(PROFILE)
+    for match in re.finditer(r"\d+(?:\.\d+)?\s*%", headline):
+        if _normalize_number(match.group(0)) not in numeric_claims:
+            problems.append(f"ungrounded metric {match.group(0)}")
+    # Domain vocabulary uses the same threshold as bullets: a headline that
+    # introduces more than NOVEL_TERM_LIMIT new domain words is claiming a
+    # field of work the CV does not support. One or two loose descriptors
+    # ("Async APIs", "Backend-Leaning") are normal resume compression.
+    novel = novel_domain_terms(headline, cv_vocabulary(PROFILE))
+    # Same rule as bullets: a headline that introduces more than
+    # NOVEL_TERM_LIMIT new domain words is claiming work the CV does not
+    # support. One or two loose descriptors ("Async APIs", "Backend-Leaning")
+    # are normal resume compression and stay.
+    if len(novel) > NOVEL_TERM_LIMIT:
+        log.warning("Dropping ungrounded tailored headline (novel domain terms: %s): %s",
+                    ", ".join(novel[:5]), headline[:90])
+        return DEFAULT_HEADLINE
+    for problem in problems:
+        log.warning("Dropping tailored headline (%s): %s", problem, headline[:90])
+        return DEFAULT_HEADLINE
+    return headline
+
+
 def _package_from_data(data: dict, company: str, role: str) -> ApplicationPackage:
     generated_entries = _data_get(data, "tailoredExperience", "tailored_experience", default=[])
     if not isinstance(generated_entries, list):
@@ -726,7 +765,7 @@ def _package_from_data(data: dict, company: str, role: str) -> ApplicationPackag
         keywords_missing=_as_list(_data_get(data, "keywordsMissing", "keywords_missing", default=[])),
         email_subject=_data_get(data, "emailSubject", "email_subject", default=f"Reaching out — {role} at {company}"),
         email_body=_data_get(data, "emailBody", "email_body", default=""),
-        headline=_clean_headline(_data_get(data, "headline", default="")),
+        headline=_grounded_headline(_data_get(data, "headline", default="")),
     )
 
 

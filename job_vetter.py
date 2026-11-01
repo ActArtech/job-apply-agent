@@ -200,7 +200,12 @@ def vet_job_detail(company: str, role: str, url: str, jd: str, provider: str = "
     # cloud engine has no key: otherwise provider="gemini" (the default) tries
     # Gemini, falls back to Groq, and both fail with "client not configured",
     # turning every job into a spurious rejection.
-    if _local_available() and provider in ("gemini", "both"):
+    # Cloud MiniMax first when configured: it fabricates far less than the
+    # local model. Ollama remains the offline fallback.
+    from ai_providers import minimax_available as _minimax_available
+    if _minimax_available() and provider in ("gemini", "both"):
+        provider = "minimax"
+    elif _local_available() and provider in ("gemini", "both"):
         provider = "ollama"
 
     if provider == "both":

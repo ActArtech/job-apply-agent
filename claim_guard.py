@@ -340,6 +340,29 @@ def cv_vocabulary(profile: dict) -> set[str]:
     return words
 
 
+def _word_grounded(word: str, vocabulary: set[str]) -> bool:
+    """True when a word is covered by the CV, allowing singular/plural and
+    common spelling variants ("postgres"/"postgresql", "api"/"apis")."""
+    if word in vocabulary:
+        return True
+    variants = {word, word + "s", word[:-1] if word.endswith("s") else word}
+    if word == "postgres":
+        variants.add("postgresql")
+    if word == "postgresql":
+        variants.add("postgres")
+    if word == "node":
+        variants.update({"nodejs", "node.js"})
+    if word in ("nodejs", "node.js"):
+        variants.add("node")
+    if word == "javascript":
+        variants.add("js")
+    if word == "typescript":
+        variants.add("ts")
+    if word == "async":
+        variants.add("asyncio")
+    return any(v in vocabulary for v in variants)
+
+
 def novel_domain_terms(bullet: str, vocabulary: set[str]) -> list[str]:
     """Domain words in a bullet that do not appear in the CV."""
     novel = []
@@ -347,7 +370,9 @@ def novel_domain_terms(bullet: str, vocabulary: set[str]) -> list[str]:
         token = match.group(0).lower().rstrip(".")
         parts = [p for p in re.split(r"[/#+.-]", token) if len(p) >= 2] or [token]
         for part in parts:
-            if part in vocabulary or part in _GENERIC_WORDS:
+            if part in _GENERIC_WORDS:
+                continue
+            if _word_grounded(part, vocabulary):
                 continue
             if len(part) < 5:
                 continue

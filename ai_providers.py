@@ -14,7 +14,8 @@ from google import genai
 from google.genai import types
 from groq import Groq
 
-from config import GEMINI_API_KEY, GROQ_API_KEY, OLLAMA_BASE_URL, OLLAMA_MODEL
+from config import (GEMINI_API_KEY, GROQ_API_KEY, OLLAMA_BASE_URL, OLLAMA_MODEL,
+                    MINIMAX_API_KEY, MINIMAX_BASE_URL, MINIMAX_MODEL)
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,52 @@ class ProviderBothResult:
     gemini: Optional[dict]
     groq: Optional[dict]
     provider: str = "both"
+
+
+# Cloud provider: MiniMax's OpenAI-compatible endpoint. Preferred over the
+# local model because it fabricates far less and is much faster; the local
+# engine stays as the offline fallback.
+_minimax_client = None
+if MINIMAX_API_KEY:
+    try:
+        from openai import OpenAI as _MiniMaxOpenAI
+        _minimax_client = _MiniMaxOpenAI(
+            api_key=MINIMAX_API_KEY,
+            base_url=MINIMAX_BASE_URL.rstrip("/"),
+            timeout=180.0,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("MiniMax client init failed: %s", exc)
+        _minimax_client = None
+
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(text: str) -> str:
+    """MiniMax reasoning models emit a <think> block before the answer."""
+    return _THINK_RE.sub("", str(text or "")).strip()
+
+
+def call_minimax(prompt: str) -> dict:
+    if not _minimax_client:
+        raise ProviderError("MiniMax client not configured — set MINIMAX_API_KEY", "minimax")
+    response = _minimax_client.chat.completions.create(
+        model=MINIMAX_MODEL,
+        messages=[
+            {"role": "system", "content": "You are a strict, expert JSON-only output machine."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0,
+        max_tokens=4096,
+        # MiniMax rejects response_format="json_object"; the system prompt
+        # plus the JSON parse below is what keeps the output structured.
+    )
+    content = _strip_think(response.choices[0].message.content)
+    if not content:
+        raise ProviderError("MiniMax returned empty content", "minimax")
+    raw = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return json.loads(raw)
 
 
 def call_gemini(prompt: str) -> dict:
@@ -124,6 +171,8 @@ def _engine_ready(name: str) -> bool:
         return groq_client is not None
     if name == "ollama":
         return _ollama_client is not None
+    if name == "minimax":
+        return _minimax_client is not None
     return False
 
 
@@ -140,11 +189,16 @@ def _resolve_chain(provider: str) -> list[str]:
     no local fallback and every job was rejected when the keys were absent.
     """
     if provider == "groq":
-        chain = ["groq", "gemini", "ollama"]
+        # Keep the upstream contract: Groq falls back to Gemini.
+        chain = ["groq", "gemini", "minimax", "ollama"]
     elif provider == "ollama":
-        chain = ["ollama", "gemini", "groq"]
+        chain = ["ollama", "minimax", "gemini", "groq"]
     else:
-        chain = ["gemini", "groq", "ollama"]
+        # Upstream order first (gemini -> groq), then MiniMax, then local.
+        # Unconfigured engines raise instantly and cost nothing, so production
+        # falls through to MiniMax while the tests that monkeypatch gemini
+        # keep their original contract.
+        chain = ["gemini", "groq", "minimax", "ollama"]
     return chain
 
 
@@ -166,6 +220,8 @@ def call_provider_tracked(prompt: str, provider: str = "gemini") -> Tuple[dict, 
             return call_groq(prompt)
         if name == "ollama":
             return call_ollama(prompt)
+        if name == "minimax":
+            return call_minimax(prompt)
         return call_gemini(prompt)
 
     last_error: Optional[Exception] = None
@@ -233,6 +289,8 @@ def call_provider(prompt: str, provider: str = "gemini") -> "dict | ProviderBoth
                 return call_ollama(prompt)
             if name == "groq":
                 return call_groq(prompt)
+            if name == "minimax":
+                return call_minimax(prompt)
             return call_gemini(prompt)
         except Exception as e:
             last_error = e
@@ -244,3 +302,8 @@ def call_provider(prompt: str, provider: str = "gemini") -> "dict | ProviderBoth
 def local_available() -> bool:
     """True when the local Ollama provider is configured and usable."""
     return _ollama_client is not None
+
+
+def minimax_available() -> bool:
+    """True when the MiniMax cloud provider is configured and usable."""
+    return _minimax_client is not None
