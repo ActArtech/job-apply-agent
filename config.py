@@ -22,7 +22,7 @@ OLLAMA_MODEL        = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 # MiniMax cloud (OpenAI-compatible). Empty key disables it.
 MINIMAX_API_KEY     = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_BASE_URL    = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
-MINIMAX_MODEL       = os.getenv("MINIMAX_MODEL", "MiniMax-Text-01")
+MINIMAX_MODEL       = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
 HUNTER_API_KEY      = os.getenv("HUNTER_API_KEY", "")          # hunter.io
 APOLLO_API_KEY      = os.getenv("APOLLO_API_KEY", "")          # apollo.io
 SNOV_API_KEY        = os.getenv("SNOV_API_KEY", "")            # snov.io

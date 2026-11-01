@@ -86,7 +86,9 @@ def call_minimax(prompt: str) -> dict:
             {"role": "user", "content": prompt},
         ],
         temperature=0,
-        max_tokens=4096,
+        # MiniMax-M3 is a reasoning model: the <think> block counts against
+        # max_tokens, so this must leave room for the JSON answer as well.
+        max_tokens=16384,
         # MiniMax rejects response_format="json_object"; the system prompt
         # plus the JSON parse below is what keeps the output structured.
     )
